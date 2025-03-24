@@ -37,5 +37,8 @@
   },
   "prettier": {
     "singleQuote": true
+  },
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1"
   }
 }
