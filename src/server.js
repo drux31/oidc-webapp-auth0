@@ -63,7 +63,7 @@ app.get('/login', (req, res) => {
 
   // add the cookie to the response and issue a 302 redirecting user
   res
-    .cookie(nonce, options)
+    .cookie(nonceCookie, nonce, options)
     .redirect(
       authorisationEndpoint +
         '?response_mode=' +
@@ -82,7 +82,58 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/callback', async (req, res) => {
-  res.status(501).send();
+  //res.status(501).send();
+  // take nonce from cookie
+  const nonce = req.signedCookies[nonce];
+
+  // delete nonce
+  delete req.signedCookies[nonce];
+
+  //take the Id token
+  const {id_token} = req.body;
+
+  //decode token
+  const decodeToken = jwt.decode(id_token, {complete: true});
+
+  //get the key id
+  const kid = decodeToken.header.kid;
+
+  // get the public key
+  const client = jwksClient({
+    jwksUri: oidcProviderInfo['jkws_uri'],
+  });
+
+  client.getSigningKey(kid, (err, key) => {
+    const signingKey = key.publicKey || key.rsaPublicKey;
+
+    // verify signature & decode token
+    const veifiedToken = jwt.verufy(id_token, signingKey);
+
+    // check audiencem nonce and expiration time
+    const {
+      nonce: decodedNonce,
+      aud: audience,
+      exp: expirationDate,
+      iss: issuer
+    } = verifiedToken;
+    
+    const currentTime = Math.floor(Date.now() / 1000);
+    const expectedAudience = process.env.CLIENT_ID; 
+
+    if (audience !== expectedAudience ||
+        decodedNonce !== nonce ||
+        expirationDate < currentTime ||
+        issuer !== oidcProviderInfo['issuer']) {
+          // send an unauthorised http status
+          return res.status(401).send();
+    }
+
+    req.session.decodedIdToken = verifiedToken;
+    req.session.idToken = id_token;
+
+    // send the decoded version of the ID Token
+    res.redirect('/profile');
+  })
 });
 
 app.get('/to-dos', async (req, res) => {
